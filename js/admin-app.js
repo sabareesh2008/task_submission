@@ -486,6 +486,326 @@ async function downloadProofsZip() {
   showToast(`✅ Successfully downloaded ${count} proofs in ZIP!`);
 }
 
+// ===================================================================
+// 8B. COMPILED ALL-IN-ONE PDF GENERATOR (Single PDF for All / Section)
+// ===================================================================
+
+function openPdfExportModal() {
+  const select = document.getElementById('pdfSectionSelect');
+  select.innerHTML = '<option value="all">🌐 All Sections Combined (Single Master PDF)</option>';
+
+  // Unique sections from all students
+  const sections = Array.from(
+    new Set(allStudents.map(s => String(s.section || '').trim().toUpperCase()).filter(Boolean))
+  ).sort();
+
+  sections.forEach(sec => {
+    const opt = document.createElement('option');
+    opt.value = sec;
+    opt.textContent = `Section ${sec} Only`;
+    if (currentSectionFilter === sec) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  document.getElementById('pdfProgressBox').style.display = 'none';
+  document.getElementById('btnGeneratePDF').disabled = false;
+  document.getElementById('pdfExportModal').classList.add('active');
+}
+
+function closePdfExportModal() {
+  document.getElementById('pdfExportModal').classList.remove('active');
+}
+
+// Convert image URL to high-resolution JPEG Data URL for jsPDF
+async function loadImageForPdf(url) {
+  if (!url) return null;
+  
+  if (url.startsWith('data:image')) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ data: url, width: img.naturalWidth || 800, height: img.naturalHeight || 600 });
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  }
+
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error('Fetch failed');
+    const blob = await res.blob();
+    const dataUrl = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ data: dataUrl, width: img.naturalWidth || 800, height: img.naturalHeight || 600 });
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  } catch (err) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || 800;
+          canvas.height = img.naturalHeight || 600;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          resolve({ data: canvas.toDataURL('image/jpeg', 0.85), width: canvas.width, height: canvas.height });
+        } catch (e) {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  }
+}
+
+async function generateCompiledPDF() {
+  if (!taskSubmissions || taskSubmissions.length === 0) {
+    alert('No submissions found to export.');
+    return;
+  }
+
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert('PDF library is loading. Please wait a moment and try again.');
+    return;
+  }
+
+  const scope = document.getElementById('pdfSectionSelect').value;
+  const studentMap = new Map();
+  allStudents.forEach(s => studentMap.set(String(s.reg_no).trim().toUpperCase(), s));
+
+  // Filter submissions by scope
+  const exportList = taskSubmissions.filter(sub => {
+    if (!sub.screenshot_url) return false;
+    if (scope === 'all') return true;
+    const student = studentMap.get(String(sub.reg_no).trim().toUpperCase());
+    const sec = student ? student.section : sub.section;
+    return String(sec).toUpperCase() === scope.toUpperCase();
+  });
+
+  if (exportList.length === 0) {
+    alert(`No screenshot proofs found for Section ${scope}.`);
+    return;
+  }
+
+  const btnGen = document.getElementById('btnGeneratePDF');
+  const progressBox = document.getElementById('pdfProgressBox');
+  const progressBar = document.getElementById('pdfProgressBar');
+  const progressTitle = document.getElementById('pdfProgressTitle');
+  const progressSub = document.getElementById('pdfProgressSub');
+
+  btnGen.disabled = true;
+  progressBox.style.display = 'block';
+  progressBar.style.width = '0%';
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
+
+    const taskTitle = currentTask ? currentTask.title : 'Task Submission Report';
+    const totalPages = exportList.length + 1; // 1 cover page + N student pages
+
+    // ==========================================
+    // PAGE 1: PROFESSIONAL COVER / SUMMARY DOSSIER
+    // ==========================================
+    // Top banner
+    doc.setFillColor(15, 23, 42); // Slate #0f172a
+    doc.rect(0, 0, 210, 48, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(20);
+    doc.text('TASK SUBMISSION PROOF DOSSIER', 15, 22);
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(203, 213, 225); // #cbd5e1
+    doc.text(taskTitle.substring(0, 85), 15, 32);
+
+    // Meta Details Box
+    doc.setFillColor(248, 250, 252);
+    doc.rect(15, 56, 180, 36, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(15, 56, 180, 36, 'S');
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('REPORT OVERVIEW', 22, 66);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    const scopeLabel = scope === 'all' ? 'All Sections Combined (Master Report)' : `Section ${scope} Only`;
+    doc.text(`Scope: ${scopeLabel}`, 22, 73);
+    doc.text(`Total Submitted Proofs: ${exportList.length} Students`, 22, 79);
+    doc.text(`Generated On: ${new Date().toLocaleString()}`, 22, 85);
+
+    // Summary Table Header
+    doc.setFillColor(241, 245, 249);
+    doc.rect(15, 102, 180, 8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text('#', 18, 107);
+    doc.text('REGISTER NO', 28, 107);
+    doc.text('STUDENT NAME', 65, 107);
+    doc.text('SECTION', 130, 107);
+    doc.text('PAGE NO', 170, 107);
+
+    // List First 25 students on cover summary
+    let y = 117;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+
+    const previewList = exportList.slice(0, 22);
+    previewList.forEach((sub, idx) => {
+      const student = studentMap.get(String(sub.reg_no).trim().toUpperCase()) || {};
+      const reg = sub.reg_no || student.reg_no;
+      const name = (student.name || sub.student_name || 'Student').substring(0, 32);
+      const sec = student.section || sub.section || '-';
+
+      doc.text(`${idx + 1}`, 18, y);
+      doc.text(reg, 28, y);
+      doc.text(name, 65, y);
+      doc.text(`Sec ${sec}`, 130, y);
+      doc.text(`Page ${idx + 2}`, 172, y);
+
+      // Light separator
+      doc.setDrawColor(241, 245, 249);
+      doc.line(15, y + 2, 195, y + 2);
+      y += 7.2;
+    });
+
+    if (exportList.length > 22) {
+      doc.setTextColor(100, 116, 139);
+      doc.text(`... and ${exportList.length - 22} more student proofs attached below`, 105, y + 4, { align: 'center' });
+    }
+
+    // Cover Footer
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Generated via TaskDesk Academic Verification System', 15, 290);
+    doc.text(`Cover Page (1 of ${totalPages})`, 195, 290, { align: 'right' });
+
+    // ==========================================
+    // SUBSEQUENT PAGES: 1 PAGE PER PROOF
+    // ==========================================
+    for (let i = 0; i < exportList.length; i++) {
+      const sub = exportList[i];
+      const student = studentMap.get(String(sub.reg_no).trim().toUpperCase()) || {};
+      const reg = sub.reg_no || student.reg_no;
+      const name = student.name || sub.student_name || 'Student';
+      const dept = student.department || sub.department || 'ECE';
+      const sec = student.section || sub.section || '-';
+
+      // Update progress
+      const pct = Math.round(((i + 1) / exportList.length) * 100);
+      progressBar.style.width = `${pct}%`;
+      progressTitle.textContent = `Formatting Page ${i + 1} of ${exportList.length}...`;
+      progressSub.textContent = `Rendering proof for ${name} (${reg})`;
+
+      // Allow UI tick
+      await new Promise(r => setTimeout(r, 10));
+
+      doc.addPage();
+
+      // Top Student Info Card (30mm)
+      doc.setFillColor(15, 23, 42); // #0f172a
+      doc.rect(15, 12, 180, 26, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text(`${name}   |   ${reg}`, 20, 20);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(203, 213, 225);
+      const subDate = sub.submitted_at ? new Date(sub.submitted_at).toLocaleString() : 'N/A';
+      doc.text(`Department: ${dept}   |   Section: ${sec}   |   Submitted: ${subDate}`, 20, 27);
+
+      if (sub.notes) {
+        doc.text(`Remarks: ${sub.notes.substring(0, 90)}`, 20, 34);
+      }
+
+      // Embed Screenshot
+      try {
+        const imgObj = await loadImageForPdf(sub.screenshot_url);
+        if (imgObj && imgObj.data) {
+          const maxW = 180;
+          const maxH = 230;
+          const imgW = imgObj.width || 800;
+          const imgH = imgObj.height || 600;
+          const ratio = Math.min(maxW / imgW, maxH / imgH);
+          const w = imgW * ratio;
+          const h = imgH * ratio;
+          const x = 15 + (maxW - w) / 2;
+          const y = 44 + (maxH - h) / 2;
+
+          // Shadow / border frame
+          doc.setFillColor(248, 250, 252);
+          doc.rect(15, 42, 180, 235, 'F');
+          doc.setDrawColor(226, 232, 240);
+          doc.rect(15, 42, 180, 235, 'S');
+
+          // Draw the image
+          doc.addImage(imgObj.data, 'JPEG', x, y, w, h);
+        } else {
+          // Placeholder if image failed
+          doc.setFillColor(241, 245, 249);
+          doc.rect(15, 42, 180, 80, 'F');
+          doc.setDrawColor(203, 213, 225);
+          doc.rect(15, 42, 180, 80, 'S');
+          doc.setTextColor(100, 116, 139);
+          doc.setFontSize(10);
+          doc.text('Screenshot proof image could not be loaded directly', 105, 78, { align: 'center' });
+          doc.setFontSize(8);
+          doc.text(String(sub.screenshot_url).substring(0, 85), 105, 88, { align: 'center' });
+        }
+      } catch (imgErr) {
+        console.warn('Image rendering note:', imgErr);
+      }
+
+      // Page Footer
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text('TaskDesk Academic Verification System', 15, 290);
+      doc.text(`Page ${i + 2} of ${totalPages}`, 195, 290, { align: 'right' });
+    }
+
+    // Save PDF
+    const cleanScope = scope === 'all' ? 'All_Sections_Combined' : `Section_${scope}`;
+    const cleanTask = taskTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+    const filename = `TaskProofs_${cleanTask}_${cleanScope}.pdf`;
+
+    doc.save(filename);
+    showToast(`✅ Successfully downloaded ${exportList.length} proofs in PDF!`);
+    closePdfExportModal();
+
+  } catch (err) {
+    console.error('PDF generation error:', err);
+    alert('Failed to generate PDF: ' + err.message);
+  } finally {
+    btnGen.disabled = false;
+    progressBox.style.display = 'none';
+  }
+}
+
 // 9. Screenshot Modal Lightbox
 function openScreenshotModal(student, sub) {
   document.getElementById('modalStudentTitle').textContent = `${student.name} (${student.reg_no})`;
@@ -689,6 +1009,8 @@ function attachAdminEvents() {
   document.getElementById('btnCopyWhatsAppPending').addEventListener('click', openPendingCopyDialog);
   document.getElementById('btnExportCSV').addEventListener('click', exportCSVReport);
   document.getElementById('btnDownloadZip').addEventListener('click', downloadProofsZip);
+  document.getElementById('btnOpenPdfModal').addEventListener('click', openPdfExportModal);
+  document.getElementById('btnGeneratePDF').addEventListener('click', generateCompiledPDF);
   document.getElementById('btnNewTask').addEventListener('click', openNewTaskModal);
   document.getElementById('btnManageStudents').addEventListener('click', openRosterModal);
 

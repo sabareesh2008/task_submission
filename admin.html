@@ -15,6 +15,8 @@
   <!-- JSZip & FileSaver for Bulk ZIP Export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <!-- jsPDF for Single-File PDF Generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -67,12 +69,15 @@
         <p id="activeTaskDeadlineText" style="font-size: 0.85rem; color: var(--text-secondary);">Deadline: Checking...</p>
       </div>
 
-      <div style="display: flex; gap: 0.5rem;">
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <button id="btnExportCSV" class="btn btn-secondary btn-sm">
-          📊 Export CSV / Excel
+          📊 Export CSV
         </button>
-        <button id="btnDownloadZip" class="btn btn-primary btn-sm">
-          📦 Download All Proofs (ZIP)
+        <button id="btnDownloadZip" class="btn btn-outline btn-sm">
+          📦 Download ZIP
+        </button>
+        <button id="btnOpenPdfModal" class="btn btn-primary btn-sm" style="background-color: #0f172a; border-color: #0f172a;">
+          📄 Download Proofs (PDF)
         </button>
       </div>
     </div>
@@ -352,14 +357,56 @@
         </div>
       </div>
     </div>
+  <!-- Modal 5: Download Proofs as Single PDF -->
+  <div id="pdfExportModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📄 Download Proofs in Single PDF</h3>
+        <button class="modal-close-btn" onclick="closePdfExportModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+          Generate a high-quality compiled PDF document containing student screenshot proofs with registration details.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label" for="pdfSectionSelect">Choose Download Scope</label>
+          <select id="pdfSectionSelect" class="form-input" style="cursor: pointer; font-weight: 600;">
+            <option value="all">🌐 All Sections Combined (Single Master PDF)</option>
+          </select>
+          <div class="form-hint" id="pdfScopeHint">All submitted students across all sections compiled in 1 document</div>
+        </div>
+
+        <!-- Progress Box -->
+        <div id="pdfProgressBox" style="display: none; margin-top: 1rem;">
+          <div class="alert alert-info" style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+            <div>
+              <strong id="pdfProgressTitle">Generating PDF...</strong>
+              <div id="pdfProgressSub" style="font-size: 0.8rem; margin-top: 0.2rem;">Downloading images and formatting pages...</div>
+            </div>
+          </div>
+          <div class="stat-progress-bar" style="margin-top: 0.5rem;">
+            <div id="pdfProgressBar" class="stat-progress-fill" style="width: 0%; background-color: var(--primary);"></div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-outline" onclick="closePdfExportModal()">Cancel</button>
+          <button type="button" id="btnGeneratePDF" class="btn btn-primary">
+            Download PDF
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Toast Notification -->
   <div id="toastNotification" class="toast">Action completed successfully</div>
 
   <!-- Scripts -->
-  <script src="js/mock-data.js?v=3.0"></script>
-  <script src="js/supabase-config.js?v=3.0"></script>
-  <script src="js/admin-app.js?v=3.0"></script>
+  <script src="js/mock-data.js?v=4.0"></script>
+  <script src="js/supabase-config.js?v=4.0"></script>
+  <script src="js/admin-app.js?v=4.0"></script>
 </body>
 </html>
