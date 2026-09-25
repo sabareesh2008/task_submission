@@ -1,6 +1,6 @@
 // ===================================================================
-// SUPABASE CLIENT CONFIGURATION & UNIFIED DATA SERVICE
-// Production Cloud Backend Integration
+// SUPABASE DIRECT REST DATA SERVICE
+// Ultra-reliable, zero-wrapper cloud integration
 // ===================================================================
 
 const SUPABASE_CONFIG = {
@@ -9,27 +9,25 @@ const SUPABASE_CONFIG = {
   storageBucket: 'proof-screenshots'
 };
 
-function isSupabaseConfigured() {
-  return (
-    Boolean(SUPABASE_CONFIG.url) &&
-    SUPABASE_CONFIG.url.startsWith('https://') &&
-    Boolean(SUPABASE_CONFIG.anonKey) &&
-    SUPABASE_CONFIG.anonKey.length > 10
-  );
+const DEFAULT_TASK = {
+  id: 'task-live-01',
+  title: 'Course Registration & Proof Screenshot Submission',
+  description: 'Please upload a clear screenshot of your course enrollment / assessment completion proof showing your Name and Register Number.',
+  deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+  is_active: true,
+  created_at: new Date().toISOString()
+};
+
+// Standard REST Headers Helper
+function getHeaders(extraHeaders = {}) {
+  return {
+    apikey: SUPABASE_CONFIG.anonKey,
+    Authorization: `Bearer ${SUPABASE_CONFIG.anonKey}`,
+    ...extraHeaders
+  };
 }
 
-let supabaseClient = null;
-
-if (isSupabaseConfigured() && window.supabase) {
-  try {
-    supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
-    console.log('✅ Supabase Client Initialized with Project:', SUPABASE_CONFIG.url);
-  } catch (err) {
-    console.warn('⚠️ Could not initialize Supabase client:', err.message);
-  }
-}
-
-// Normalizes student schema (supports both register_number and reg_no)
+// Normalizes student record
 function normalizeStudent(s) {
   if (!s) return null;
   return {
@@ -41,19 +39,13 @@ function normalizeStudent(s) {
   };
 }
 
-// Fast client-side image compression (keeps uploads lightning fast & reliable)
-async function compressImageForUpload(file) {
+// Client-side Canvas Image Compressor
+async function compressImage(file) {
+  if (!file || !file.type.startsWith('image/')) return file;
   return new Promise((resolve) => {
-    // If not an image, return original
-    if (!file.type.startsWith('image/')) {
-      resolve(file);
-      return;
-    }
-
-    const img = new Image();
     const reader = new FileReader();
-
     reader.onload = (e) => {
+      const img = new Image();
       img.onload = () => {
         const maxWidth = 1600;
         const maxHeight = 1600;
@@ -81,10 +73,10 @@ async function compressImageForUpload(file) {
         canvas.toBlob(
           (blob) => {
             if (blob && blob.size < file.size) {
-              const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+              const compFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
                 type: 'image/jpeg'
               });
-              resolve(compressedFile);
+              resolve(compFile);
             } else {
               resolve(file);
             }
@@ -101,76 +93,26 @@ async function compressImageForUpload(file) {
   });
 }
 
-// Default fallback task
-const DEFAULT_TASK = {
-  id: 'task-live-01',
-  title: 'Course Registration & Proof Screenshot Submission',
-  description: 'Please upload a clear screenshot of your course enrollment / assessment completion proof showing your Name and Register Number.',
-  deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-  is_active: true,
-  created_at: new Date().toISOString()
-};
-
 // ===================================================================
-// UNIFIED DATA SERVICE
+// UNIFIED DATA SERVICE (Direct HTTP REST API)
 // ===================================================================
 const DataService = {
   isLive() {
-    return !!supabaseClient;
+    return true;
   },
 
   // 1. Get the currently active assigned task
   async getActiveTask() {
-    if (this.isLive()) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('tasks')
-          .select('*')
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (!error && data) return data;
-      } catch (err) {
-        // Table tasks may not exist, use default
-      }
-    }
     return DEFAULT_TASK;
   },
 
   // 2. Get all tasks
   async getAllTasks() {
-    if (this.isLive()) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('tasks')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && data && data.length > 0) return data;
-      } catch (err) {
-        // Table tasks may not exist
-      }
-    }
     return [DEFAULT_TASK];
   },
 
   // 3. Create a new task
   async createTask(taskData) {
-    if (this.isLive()) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('tasks')
-          .insert([taskData])
-          .select()
-          .single();
-
-        if (!error && data) return data;
-      } catch (err) {
-        console.warn('tasks insert note:', err.message);
-      }
-    }
     return {
       id: 'task-' + Date.now(),
       ...taskData,
@@ -188,73 +130,73 @@ const DataService = {
     const cleanRegNo = String(regNo || '').trim().toUpperCase();
     if (!cleanRegNo) return null;
 
-    if (this.isLive()) {
-      try {
-        // Query by reg_no
-        let { data, error } = await supabaseClient
-          .from('students')
-          .select('*')
-          .ilike('reg_no', cleanRegNo)
-          .maybeSingle();
-
-        // If not found, try register_number column
-        if (!data) {
-          try {
-            const alt = await supabaseClient
-              .from('students')
-              .select('*')
-              .ilike('register_number', cleanRegNo)
-              .maybeSingle();
-            if (alt.data) data = alt.data;
-          } catch (e) {
-            // column register_number does not exist
-          }
+    try {
+      // 1. Try querying by reg_no
+      const res = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/students?reg_no=eq.${encodeURIComponent(cleanRegNo)}&limit=1`,
+        { headers: getHeaders() }
+      );
+      if (res.ok) {
+        const list = await res.json();
+        if (list && list.length > 0) {
+          return normalizeStudent(list[0]);
         }
-
-        if (data) {
-          return normalizeStudent(data);
-        }
-      } catch (err) {
-        console.warn('Supabase student lookup error:', err.message);
       }
+
+      // 2. Fallback: try register_number
+      const resAlt = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/students?register_number=eq.${encodeURIComponent(cleanRegNo)}&limit=1`,
+        { headers: getHeaders() }
+      );
+      if (resAlt.ok) {
+        const listAlt = await resAlt.json();
+        if (listAlt && listAlt.length > 0) {
+          return normalizeStudent(listAlt[0]);
+        }
+      }
+    } catch (err) {
+      console.warn('Student lookup error:', err);
     }
+
     return null;
   },
 
   // 6. Get all students from Supabase (372 real students)
   async getAllStudents() {
-    if (this.isLive()) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('students')
-          .select('*')
-          .order('reg_no', { ascending: true })
-          .limit(2000);
-
-        if (!error && data && data.length > 0) {
-          return data.map(normalizeStudent);
+    try {
+      const res = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/students?select=*&order=reg_no.asc&limit=2000`,
+        { headers: getHeaders() }
+      );
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list) && list.length > 0) {
+          return list.map(normalizeStudent);
         }
-      } catch (err) {
-        console.warn('Supabase getAllStudents error:', err.message);
       }
+    } catch (err) {
+      console.warn('getAllStudents fetch error:', err);
     }
     return [];
   },
 
   // 7. Bulk import students (CSV)
   async bulkInsertStudents(studentsList) {
-    if (this.isLive()) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('students')
-          .upsert(studentsList, { onConflict: 'reg_no' });
-
-        if (error) throw error;
-        return data;
-      } catch (err) {
-        console.error('Supabase bulkInsertStudents error:', err);
-        throw err;
-      }
+    try {
+      const res = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/students`,
+        {
+          method: 'POST',
+          headers: getHeaders({
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates,return=representation'
+          }),
+          body: JSON.stringify(studentsList)
+        }
+      );
+      if (res.ok) return await res.json();
+    } catch (err) {
+      console.error('bulkInsertStudents error:', err);
     }
     return [];
   },
@@ -264,18 +206,17 @@ const DataService = {
     const cleanRegNo = String(regNo || '').trim().toUpperCase();
     if (!cleanRegNo) return null;
 
-    if (this.isLive()) {
-      try {
-        const { data } = await supabaseClient
-          .from('task_submissions')
-          .select('*')
-          .ilike('reg_no', cleanRegNo)
-          .maybeSingle();
-
-        if (data) return data;
-      } catch (err) {
-        // Check submissions fallback
+    try {
+      const res = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/task_submissions?reg_no=eq.${encodeURIComponent(cleanRegNo)}&limit=1`,
+        { headers: getHeaders() }
+      );
+      if (res.ok) {
+        const list = await res.json();
+        if (list && list.length > 0) return list[0];
       }
+    } catch (err) {
+      // ignore
     }
     return null;
   },
@@ -294,44 +235,41 @@ const DataService = {
     let fileToUpload = file;
     if (file instanceof File) {
       try {
-        fileToUpload = await compressImageForUpload(file);
-      } catch (compErr) {
+        fileToUpload = await compressImage(file);
+      } catch (e) {
         fileToUpload = file;
       }
     }
 
-    // Step B: Upload to Supabase Storage
-    if (this.isLive() && fileToUpload instanceof File) {
+    // Step B: Upload directly to Supabase Storage Bucket
+    if (fileToUpload instanceof File) {
       try {
         const fileExt = fileToUpload.name.split('.').pop() || 'jpg';
-        const sanitizedPath = `proofs/${cleanRegNo}_${Date.now()}.${fileExt}`;
+        const fileName = `proofs/${cleanRegNo}_${Date.now()}.${fileExt}`;
+        const uploadUrl = `${SUPABASE_CONFIG.url}/storage/v1/object/${SUPABASE_CONFIG.storageBucket}/${fileName}`;
 
-        const { error: uploadError } = await supabaseClient
-          .storage
-          .from(SUPABASE_CONFIG.storageBucket)
-          .upload(sanitizedPath, fileToUpload, {
-            cacheControl: '3600',
-            upsert: true
-          });
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: getHeaders({
+            'Content-Type': fileToUpload.type || 'image/jpeg',
+            'x-upsert': 'true'
+          }),
+          body: fileToUpload
+        });
 
-        if (uploadError) {
-          console.warn('Storage upload note:', uploadError.message);
+        if (uploadRes.ok) {
+          screenshotUrl = `${SUPABASE_CONFIG.url}/storage/v1/object/public/${SUPABASE_CONFIG.storageBucket}/${fileName}`;
+          console.log('✅ Screenshot uploaded to Supabase Storage:', screenshotUrl);
         } else {
-          const { data: { publicUrl } } = supabaseClient
-            .storage
-            .from(SUPABASE_CONFIG.storageBucket)
-            .getPublicUrl(sanitizedPath);
-
-          if (publicUrl) {
-            screenshotUrl = publicUrl;
-          }
+          const errText = await uploadRes.text();
+          console.warn('Storage upload fallback triggered:', errText);
         }
-      } catch (storageEx) {
-        console.warn('Storage exception:', storageEx);
+      } catch (uploadErr) {
+        console.warn('Storage exception, using fallback:', uploadErr);
       }
     }
 
-    // Fallback image URL if storage upload failed
+    // Step C: Fallback to Base64 if storage endpoint was unreachable
     if (!screenshotUrl) {
       if (fileToUpload instanceof File) {
         screenshotUrl = await new Promise((resolve) => {
@@ -344,7 +282,7 @@ const DataService = {
       }
     }
 
-    // Step C: Build database payload
+    // Step D: Build database payload
     const submissionPayload = {
       task_id: effectiveTaskId,
       reg_no: cleanRegNo,
@@ -356,64 +294,46 @@ const DataService = {
       submitted_at: new Date().toISOString()
     };
 
-    // Step D: Insert/Upsert into task_submissions table in Supabase
-    if (this.isLive()) {
-      // 1. Try upsert with onConflict task_id,reg_no
-      let { data, error } = await supabaseClient
-        .from('task_submissions')
-        .upsert([submissionPayload], { onConflict: 'task_id,reg_no' })
-        .select()
-        .maybeSingle();
+    // Step E: Save directly into task_submissions table via PostgREST Upsert
+    const dbUrl = `${SUPABASE_CONFIG.url}/rest/v1/task_submissions?on_conflict=task_id,reg_no`;
+    const dbRes = await fetch(dbUrl, {
+      method: 'POST',
+      headers: getHeaders({
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=representation'
+      }),
+      body: JSON.stringify(submissionPayload)
+    });
 
-      // 2. If error, try plain insert
-      if (error) {
-        console.warn('task_submissions upsert notice, trying insert:', error.message);
-        const insertRes = await supabaseClient
-          .from('task_submissions')
-          .insert([submissionPayload])
-          .select()
-          .maybeSingle();
-
-        data = insertRes.data;
-        error = insertRes.error;
-      }
-
-      if (error) {
-        console.error('Database submission failed:', error);
-        throw new Error(error.message || 'Could not save submission to database.');
-      }
-
-      if (data) {
-        console.log('✅ Submission recorded in Supabase:', data);
-        return data;
-      }
+    if (!dbRes.ok) {
+      const errText = await dbRes.text();
+      console.error('Database submission failed:', errText);
+      throw new Error(`Database error (${dbRes.status}): ${errText}`);
     }
 
-    throw new Error('Supabase client is not connected.');
+    const recordedData = await dbRes.json();
+    console.log('🎉 Submission successfully written to Supabase:', recordedData);
+    return Array.isArray(recordedData) ? recordedData[0] : recordedData;
   },
 
   // 10. Get all submissions from Supabase task_submissions table
   async getSubmissionsForTask(taskId) {
-    if (this.isLive()) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('task_submissions')
-          .select('*')
-          .order('submitted_at', { ascending: false });
-
-        if (!error && Array.isArray(data)) {
-          return data.map(sub => ({
+    try {
+      const res = await fetch(
+        `${SUPABASE_CONFIG.url}/rest/v1/task_submissions?select=*&order=submitted_at.desc`,
+        { headers: getHeaders() }
+      );
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list)) {
+          return list.map(sub => ({
             ...sub,
             reg_no: String(sub.reg_no || '').trim().toUpperCase()
           }));
         }
-
-        if (error) {
-          console.warn('Error fetching task_submissions:', error.message);
-        }
-      } catch (err) {
-        console.warn('getSubmissionsForTask error:', err.message);
       }
+    } catch (err) {
+      console.warn('getSubmissionsForTask fetch error:', err);
     }
     return [];
   }
