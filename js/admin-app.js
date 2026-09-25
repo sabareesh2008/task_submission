@@ -514,6 +514,13 @@ function openPdfExportModal() {
 
 function closePdfExportModal() {
   document.getElementById('pdfExportModal').classList.remove('active');
+  const btn = document.getElementById('btnGeneratePDF');
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = 'Download PDF';
+  }
+  const box = document.getElementById('pdfProgressBox');
+  if (box) box.style.display = 'none';
 }
 
 // Convert image URL to high-resolution JPEG Data URL for jsPDF
@@ -530,8 +537,13 @@ async function loadImageForPdf(url) {
   }
 
   try {
-    const res = await fetch(url, { mode: 'cors' });
-    if (!res.ok) throw new Error('Fetch failed');
+    const res = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_CONFIG.anonKey,
+        Authorization: `Bearer ${SUPABASE_CONFIG.anonKey}`
+      }
+    });
+    if (!res.ok) throw new Error('Fetch status ' + res.status);
     const blob = await res.blob();
     const dataUrl = await new Promise((resolve) => {
       const reader = new FileReader();
@@ -573,7 +585,8 @@ async function generateCompiledPDF() {
     return;
   }
 
-  if (!window.jspdf || !window.jspdf.jsPDF) {
+  const jsPDFClass = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!jsPDFClass) {
     alert('PDF library is loading. Please wait a moment and try again.');
     return;
   }
@@ -607,8 +620,7 @@ async function generateCompiledPDF() {
   progressBar.style.width = '0%';
 
   try {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({
+    const doc = new jsPDFClass({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
