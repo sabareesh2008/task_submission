@@ -238,7 +238,8 @@ async function handleFormSubmit(e) {
       currentTask.id,
       verifiedStudent.reg_no,
       selectedFile,
-      notes
+      notes,
+      verifiedStudent
     );
 
     // Show Receipt Modal
