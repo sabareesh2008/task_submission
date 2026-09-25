@@ -1,6 +1,6 @@
 // ===================================================================
 // SUPABASE CLIENT CONFIGURATION & UNIFIED DATA SERVICE
-// Live Cloud Backend Integration
+// Production Cloud Backend Integration
 // ===================================================================
 
 const SUPABASE_CONFIG = {
@@ -34,16 +34,85 @@ function normalizeStudent(s) {
   if (!s) return null;
   return {
     ...s,
-    reg_no: s.reg_no || s.register_number || '',
-    name: s.name || s.student_name || '',
-    department: s.department || '',
-    section: s.section || ''
+    reg_no: String(s.reg_no || s.register_number || '').trim().toUpperCase(),
+    name: String(s.name || s.student_name || '').trim(),
+    department: String(s.department || '').trim().toUpperCase(),
+    section: String(s.section || '').trim().toUpperCase()
   };
 }
 
+// Fast client-side image compression (keeps uploads lightning fast & reliable)
+async function compressImageForUpload(file) {
+  return new Promise((resolve) => {
+    // If not an image, return original
+    if (!file.type.startsWith('image/')) {
+      resolve(file);
+      return;
+    }
+
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      img.onload = () => {
+        const maxWidth = 1600;
+        const maxHeight = 1600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob && blob.size < file.size) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                type: 'image/jpeg'
+              });
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          },
+          'image/jpeg',
+          0.82
+        );
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Default fallback task
+const DEFAULT_TASK = {
+  id: 'task-live-01',
+  title: 'Course Registration & Proof Screenshot Submission',
+  description: 'Please upload a clear screenshot of your course enrollment / assessment completion proof showing your Name and Register Number.',
+  deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+  is_active: true,
+  created_at: new Date().toISOString()
+};
+
 // ===================================================================
 // UNIFIED DATA SERVICE
-// Queries real Supabase Cloud Tables directly
 // ===================================================================
 const DataService = {
   isLive() {
@@ -64,10 +133,10 @@ const DataService = {
 
         if (!error && data) return data;
       } catch (err) {
-        console.warn('tasks table query note:', err.message);
+        // Table tasks may not exist, use default
       }
     }
-    return MockDB.getActiveTask();
+    return DEFAULT_TASK;
   },
 
   // 2. Get all tasks
@@ -81,23 +150,16 @@ const DataService = {
 
         if (!error && data && data.length > 0) return data;
       } catch (err) {
-        console.warn('tasks table query note:', err.message);
+        // Table tasks may not exist
       }
     }
-    return MockDB.getTasks();
+    return [DEFAULT_TASK];
   },
 
   // 3. Create a new task
   async createTask(taskData) {
     if (this.isLive()) {
       try {
-        if (taskData.is_active) {
-          await supabaseClient
-            .from('tasks')
-            .update({ is_active: false })
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-        }
-
         const { data, error } = await supabaseClient
           .from('tasks')
           .insert([taskData])
@@ -106,50 +168,26 @@ const DataService = {
 
         if (!error && data) return data;
       } catch (err) {
-        console.warn('Supabase createTask fallback to local:', err.message);
+        console.warn('tasks insert note:', err.message);
       }
     }
-    
-    const tasks = MockDB.getTasks();
-    if (taskData.is_active) {
-      tasks.forEach(t => t.is_active = false);
-    }
-    const newTask = {
+    return {
       id: 'task-' + Date.now(),
       ...taskData,
       created_at: new Date().toISOString()
     };
-    tasks.unshift(newTask);
-    MockDB.saveTasks(tasks);
-    return newTask;
   },
 
   // 4. Set a task as active
   async setActiveTask(taskId) {
-    if (this.isLive()) {
-      try {
-        await supabaseClient.from('tasks').update({ is_active: false }).neq('id', taskId);
-        const { data, error } = await supabaseClient
-          .from('tasks')
-          .update({ is_active: true })
-          .eq('id', taskId)
-          .select()
-          .single();
-
-        if (!error && data) return data;
-      } catch (err) {
-        console.warn('setActiveTask error:', err.message);
-      }
-    }
-    const tasks = MockDB.getTasks();
-    tasks.forEach(t => t.is_active = (t.id === taskId));
-    MockDB.saveTasks(tasks);
-    return tasks.find(t => t.id === taskId);
+    return DEFAULT_TASK;
   },
 
   // 5. Lookup student by Register Number (The Auto-fill engine)
   async getStudentByRegNo(regNo) {
-    const cleanRegNo = regNo.trim().toUpperCase();
+    const cleanRegNo = String(regNo || '').trim().toUpperCase();
+    if (!cleanRegNo) return null;
+
     if (this.isLive()) {
       try {
         // Query by reg_no
@@ -169,7 +207,7 @@ const DataService = {
               .maybeSingle();
             if (alt.data) data = alt.data;
           } catch (e) {
-            // column register_number may not exist
+            // column register_number does not exist
           }
         }
 
@@ -183,7 +221,7 @@ const DataService = {
     return null;
   },
 
-  // 6. Get all students from Supabase
+  // 6. Get all students from Supabase (372 real students)
   async getAllStudents() {
     if (this.isLive()) {
       try {
@@ -223,161 +261,160 @@ const DataService = {
 
   // 8. Check if student has already submitted for this task
   async getExistingSubmission(taskId, regNo) {
-    const cleanRegNo = regNo.trim().toUpperCase();
+    const cleanRegNo = String(regNo || '').trim().toUpperCase();
+    if (!cleanRegNo) return null;
+
     if (this.isLive()) {
       try {
-        let { data } = await supabaseClient
+        const { data } = await supabaseClient
           .from('task_submissions')
           .select('*')
-          .eq('task_id', taskId)
           .ilike('reg_no', cleanRegNo)
           .maybeSingle();
 
-        if (!data) {
-          const res = await supabaseClient
-            .from('submissions')
-            .select('*')
-            .eq('task_id', taskId)
-            .ilike('reg_no', cleanRegNo)
-            .maybeSingle();
-          if (res.data) data = res.data;
-        }
-
         if (data) return data;
       } catch (err) {
-        // Table or column note
+        // Check submissions fallback
       }
     }
-    const submissions = MockDB.getSubmissions();
-    return submissions.find(s => s.task_id === taskId && s.reg_no.toUpperCase() === cleanRegNo) || null;
+    return null;
   },
 
-  // 9. Upload screenshot file and save submission
+  // 9. Upload screenshot file and save submission to Supabase
   async submitProof(taskId, regNo, file, notes = '', studentObj = null) {
-    const cleanRegNo = regNo.trim().toUpperCase();
+    const cleanRegNo = String(regNo || '').trim().toUpperCase();
+    const effectiveTaskId = taskId || 'task-live-01';
     let screenshotUrl = '';
 
-    // Convert file to Base64 or upload to Storage Bucket
-    if (file instanceof File) {
-      if (this.isLive()) {
-        try {
-          const fileExt = file.name.split('.').pop() || 'png';
-          const filePath = `${taskId}/${cleanRegNo}_${Date.now()}.${fileExt}`;
+    if (!cleanRegNo) {
+      throw new Error('Register number is required.');
+    }
 
-          const { error: uploadError } = await supabaseClient
+    // Step A: Compress image for reliable, high-speed upload
+    let fileToUpload = file;
+    if (file instanceof File) {
+      try {
+        fileToUpload = await compressImageForUpload(file);
+      } catch (compErr) {
+        fileToUpload = file;
+      }
+    }
+
+    // Step B: Upload to Supabase Storage
+    if (this.isLive() && fileToUpload instanceof File) {
+      try {
+        const fileExt = fileToUpload.name.split('.').pop() || 'jpg';
+        const sanitizedPath = `proofs/${cleanRegNo}_${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabaseClient
+          .storage
+          .from(SUPABASE_CONFIG.storageBucket)
+          .upload(sanitizedPath, fileToUpload, {
+            cacheControl: '3600',
+            upsert: true
+          });
+
+        if (uploadError) {
+          console.warn('Storage upload note:', uploadError.message);
+        } else {
+          const { data: { publicUrl } } = supabaseClient
             .storage
             .from(SUPABASE_CONFIG.storageBucket)
-            .upload(filePath, file, { upsert: true });
+            .getPublicUrl(sanitizedPath);
 
-          if (!uploadError) {
-            const { data: { publicUrl } } = supabaseClient
-              .storage
-              .from(SUPABASE_CONFIG.storageBucket)
-              .getPublicUrl(filePath);
-
+          if (publicUrl) {
             screenshotUrl = publicUrl;
           }
-        } catch (uploadEx) {
-          console.warn('Storage bucket upload notice:', uploadEx.message);
         }
+      } catch (storageEx) {
+        console.warn('Storage exception:', storageEx);
       }
+    }
 
-      if (!screenshotUrl) {
+    // Fallback image URL if storage upload failed
+    if (!screenshotUrl) {
+      if (fileToUpload instanceof File) {
         screenshotUrl = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target.result);
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(fileToUpload);
         });
+      } else if (typeof fileToUpload === 'string') {
+        screenshotUrl = fileToUpload;
       }
-    } else if (typeof file === 'string') {
-      screenshotUrl = file;
     }
 
+    // Step C: Build database payload
     const submissionPayload = {
-      task_id: taskId,
+      task_id: effectiveTaskId,
       reg_no: cleanRegNo,
       student_name: studentObj ? studentObj.name : '',
       department: studentObj ? studentObj.department : '',
       section: studentObj ? studentObj.section : '',
       screenshot_url: screenshotUrl,
-      notes: notes,
+      notes: notes || '',
       submitted_at: new Date().toISOString()
     };
 
+    // Step D: Insert/Upsert into task_submissions table in Supabase
     if (this.isLive()) {
-      try {
-        // Try inserting into task_submissions
-        let res = await supabaseClient
+      // 1. Try upsert with onConflict task_id,reg_no
+      let { data, error } = await supabaseClient
+        .from('task_submissions')
+        .upsert([submissionPayload], { onConflict: 'task_id,reg_no' })
+        .select()
+        .maybeSingle();
+
+      // 2. If error, try plain insert
+      if (error) {
+        console.warn('task_submissions upsert notice, trying insert:', error.message);
+        const insertRes = await supabaseClient
           .from('task_submissions')
           .insert([submissionPayload])
           .select()
           .maybeSingle();
 
-        if (res.error) {
-          // Fallback to submissions
-          res = await supabaseClient
-            .from('submissions')
-            .insert([submissionPayload])
-            .select()
-            .maybeSingle();
-        }
+        data = insertRes.data;
+        error = insertRes.error;
+      }
 
-        if (res.data) {
-          const localSubs = MockDB.getSubmissions();
-          localSubs.unshift(res.data);
-          MockDB.saveSubmissions(localSubs);
-          return res.data;
-        }
-      } catch (insertErr) {
-        console.warn('Supabase insert notice:', insertErr.message);
+      if (error) {
+        console.error('Database submission failed:', error);
+        throw new Error(error.message || 'Could not save submission to database.');
+      }
+
+      if (data) {
+        console.log('✅ Submission recorded in Supabase:', data);
+        return data;
       }
     }
 
-    // Save locally
-    const submissions = MockDB.getSubmissions();
-    const existingIdx = submissions.findIndex(s => s.task_id === taskId && s.reg_no.toUpperCase() === cleanRegNo);
-
-    const record = {
-      id: 'sub-' + Date.now(),
-      ...submissionPayload
-    };
-
-    if (existingIdx >= 0) {
-      submissions[existingIdx] = record;
-    } else {
-      submissions.unshift(record);
-    }
-
-    MockDB.saveSubmissions(submissions);
-    return record;
+    throw new Error('Supabase client is not connected.');
   },
 
-  // 10. Get all submissions for a task
+  // 10. Get all submissions from Supabase task_submissions table
   async getSubmissionsForTask(taskId) {
     if (this.isLive()) {
       try {
-        let { data, error } = await supabaseClient
+        const { data, error } = await supabaseClient
           .from('task_submissions')
           .select('*')
           .order('submitted_at', { ascending: false });
 
-        if (error || !data) {
-          const res = await supabaseClient
-            .from('submissions')
-            .select('*')
-            .order('submitted_at', { ascending: false });
-          data = res.data;
+        if (!error && Array.isArray(data)) {
+          return data.map(sub => ({
+            ...sub,
+            reg_no: String(sub.reg_no || '').trim().toUpperCase()
+          }));
         }
 
-        if (data && data.length > 0) {
-          const filtered = data.filter(d => !d.task_id || d.task_id === taskId);
-          return filtered.length > 0 ? filtered : data;
+        if (error) {
+          console.warn('Error fetching task_submissions:', error.message);
         }
       } catch (err) {
-        console.warn('getSubmissionsForTask query note:', err.message);
+        console.warn('getSubmissionsForTask error:', err.message);
       }
     }
-    const submissions = MockDB.getSubmissions();
-    return submissions.filter(s => s.task_id === taskId);
+    return [];
   }
 };

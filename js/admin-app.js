@@ -44,6 +44,8 @@ const tabCountPending = document.getElementById('tabCountPending');
 document.addEventListener('DOMContentLoaded', async () => {
   await loadDashboard();
   attachAdminEvents();
+  // Live auto-refresh every 12 seconds
+  setInterval(loadDashboard, 12000);
 });
 
 // 1. Load All Dashboard Data
@@ -62,7 +64,7 @@ async function loadDashboard() {
     }
 
     allStudents = await DataService.getAllStudents();
-    taskSubmissions = currentTask ? await DataService.getSubmissionsForTask(currentTask.id) : [];
+    taskSubmissions = await DataService.getSubmissionsForTask(currentTask ? currentTask.id : 'task-live-01');
 
     populateFilterDropdowns();
     computeAnalytics();
@@ -671,6 +673,18 @@ function attachAdminEvents() {
       renderFilteredTable();
     });
   });
+
+  const refreshBtn = document.getElementById('btnRefreshData');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.disabled = true;
+      refreshBtn.innerHTML = '⏳ Loading...';
+      await loadDashboard();
+      refreshBtn.disabled = false;
+      refreshBtn.innerHTML = '🔄 Refresh';
+      showToast('Dashboard data refreshed!');
+    });
+  }
 
   document.getElementById('btnCopyWhatsAppPending').addEventListener('click', openPendingCopyDialog);
   document.getElementById('btnExportCSV').addEventListener('click', exportCSVReport);
