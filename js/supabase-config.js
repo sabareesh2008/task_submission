@@ -226,16 +226,26 @@ const DataService = {
     const cleanRegNo = regNo.trim().toUpperCase();
     if (this.isLive()) {
       try {
-        const { data, error } = await supabaseClient
-          .from('submissions')
+        let { data } = await supabaseClient
+          .from('task_submissions')
           .select('*')
           .eq('task_id', taskId)
           .ilike('reg_no', cleanRegNo)
           .maybeSingle();
 
-        if (!error && data) return data;
+        if (!data) {
+          const res = await supabaseClient
+            .from('submissions')
+            .select('*')
+            .eq('task_id', taskId)
+            .ilike('reg_no', cleanRegNo)
+            .maybeSingle();
+          if (res.data) data = res.data;
+        }
+
+        if (data) return data;
       } catch (err) {
-        // column task_id might not exist yet, check local storage
+        // Table or column note
       }
     }
     const submissions = MockDB.getSubmissions();
@@ -296,25 +306,34 @@ const DataService = {
 
     if (this.isLive()) {
       try {
-        const { data, error } = await supabaseClient
-          .from('submissions')
+        // Try inserting into task_submissions
+        let res = await supabaseClient
+          .from('task_submissions')
           .insert([submissionPayload])
           .select()
-          .single();
+          .maybeSingle();
 
-        if (!error && data) {
-          // Keep synced locally
+        if (res.error) {
+          // Fallback to submissions
+          res = await supabaseClient
+            .from('submissions')
+            .insert([submissionPayload])
+            .select()
+            .maybeSingle();
+        }
+
+        if (res.data) {
           const localSubs = MockDB.getSubmissions();
-          localSubs.unshift(data);
+          localSubs.unshift(res.data);
           MockDB.saveSubmissions(localSubs);
-          return data;
+          return res.data;
         }
       } catch (insertErr) {
-        console.warn('submissions insert warning:', insertErr.message);
+        console.warn('Supabase insert notice:', insertErr.message);
       }
     }
 
-    // Save locally to ensure proof is registered
+    // Save locally
     const submissions = MockDB.getSubmissions();
     const existingIdx = submissions.findIndex(s => s.task_id === taskId && s.reg_no.toUpperCase() === cleanRegNo);
 
@@ -337,13 +356,20 @@ const DataService = {
   async getSubmissionsForTask(taskId) {
     if (this.isLive()) {
       try {
-        const { data, error } = await supabaseClient
-          .from('submissions')
+        let { data, error } = await supabaseClient
+          .from('task_submissions')
           .select('*')
           .order('submitted_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
-          // Filter if task_id column exists or return all
+        if (error || !data) {
+          const res = await supabaseClient
+            .from('submissions')
+            .select('*')
+            .order('submitted_at', { ascending: false });
+          data = res.data;
+        }
+
+        if (data && data.length > 0) {
           const filtered = data.filter(d => !d.task_id || d.task_id === taskId);
           return filtered.length > 0 ? filtered : data;
         }
