@@ -41,23 +41,9 @@ const btnSubmit = document.getElementById('btnSubmitProof');
 
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
-  setupBannerStatus();
   await loadActiveTask();
   attachEventListeners();
 });
-
-// Setup Connection Status Banner
-function setupBannerStatus() {
-  const banner = document.getElementById('connectionBanner');
-  const bannerText = document.getElementById('connectionStatusText');
-  if (DataService.isLive()) {
-    banner.classList.add('active-live');
-    bannerText.innerHTML = `<span>🟢 Connected to <strong>Supabase Cloud</strong> (Live DB & Storage)</span>`;
-  } else {
-    banner.classList.remove('active-live');
-    bannerText.innerHTML = `<span>⚡ Mode: <strong>Demo / Local Storage</strong>. Test right away or connect your Supabase project.</span>`;
-  }
-}
 
 // 1. Fetch & Display Active Task
 async function loadActiveTask() {
@@ -143,9 +129,6 @@ function attachEventListeners() {
 
   // Form Submission
   submissionForm.addEventListener('submit', handleFormSubmit);
-
-  // Supabase Settings Modal
-  document.getElementById('btnOpenConfig').addEventListener('click', openConfigModal);
 }
 
 // 3. Verify Student via Register Number
@@ -251,7 +234,7 @@ async function handleFormSubmit(e) {
 
   try {
     const notes = notesInput.value.trim();
-    const result = await DataService.submitProof(
+    await DataService.submitProof(
       currentTask.id,
       verifiedStudent.reg_no,
       selectedFile,
@@ -284,32 +267,6 @@ async function handleFormSubmit(e) {
 // Modal Helpers
 function closeSuccessModal() {
   document.getElementById('successModal').classList.remove('active');
-}
-
-function openConfigModal() {
-  document.getElementById('cfgUrl').value = localStorage.getItem('taskdash_sb_url') || '';
-  document.getElementById('cfgKey').value = localStorage.getItem('taskdash_sb_key') || '';
-  document.getElementById('configModal').classList.add('active');
-}
-
-function closeConfigModal() {
-  document.getElementById('configModal').classList.remove('active');
-}
-
-function saveSupabaseConfig() {
-  const url = document.getElementById('cfgUrl').value.trim();
-  const key = document.getElementById('cfgKey').value.trim();
-
-  if (!url || !key) {
-    alert('Please provide both Supabase URL and Anon Key.');
-    return;
-  }
-
-  DataService.saveConfig(url, key);
-}
-
-function resetToDemoMode() {
-  DataService.clearConfig();
 }
 
 function formatBytes(bytes, decimals = 1) {

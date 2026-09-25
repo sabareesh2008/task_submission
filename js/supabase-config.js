@@ -1,23 +1,21 @@
 // ===================================================================
 // SUPABASE CLIENT CONFIGURATION & UNIFIED DATA SERVICE
+// Production Configuration
 // ===================================================================
 
-// Default Supabase Configuration
-// You can enter your credentials here OR via the UI setup modal!
 const SUPABASE_CONFIG = {
-  // Replace these with your Supabase Project details or use the in-app modal
-  url: localStorage.getItem('taskdash_sb_url') || '',
-  anonKey: localStorage.getItem('taskdash_sb_key') || '',
+  url: 'https://jehhjilmqoljxmsvnwgd.supabase.co',
+  anonKey: 'sb_publishable_4x2bY6PkwBmfdIW47ILf3w_L-Q0JoJQ',
   storageBucket: 'proof-screenshots'
 };
 
 // Check if credentials are present
 function isSupabaseConfigured() {
   return (
-    SUPABASE_CONFIG.url &&
+    Boolean(SUPABASE_CONFIG.url) &&
     SUPABASE_CONFIG.url.startsWith('https://') &&
-    SUPABASE_CONFIG.anonKey &&
-    SUPABASE_CONFIG.anonKey.length > 20
+    Boolean(SUPABASE_CONFIG.anonKey) &&
+    SUPABASE_CONFIG.anonKey.length > 10
   );
 }
 
@@ -27,7 +25,7 @@ let supabaseClient = null;
 if (isSupabaseConfigured() && window.supabase) {
   try {
     supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
-    console.log('✅ Supabase Client Initialized Successfully');
+    console.log('✅ Supabase Client Initialized with Project:', SUPABASE_CONFIG.url);
   } catch (err) {
     console.warn('⚠️ Could not initialize Supabase client:', err.message);
   }
@@ -35,25 +33,11 @@ if (isSupabaseConfigured() && window.supabase) {
 
 // ===================================================================
 // UNIFIED DATA SERVICE
-// Handles queries for both Supabase (Live) and MockDB (Demo/Offline)
+// Queries Supabase Live Cloud Backend (with local fallback if offline)
 // ===================================================================
 const DataService = {
   isLive() {
     return !!supabaseClient;
-  },
-
-  // Save credentials from UI
-  saveConfig(url, anonKey) {
-    localStorage.setItem('taskdash_sb_url', url.trim());
-    localStorage.setItem('taskdash_sb_key', anonKey.trim());
-    window.location.reload();
-  },
-
-  // Clear credentials
-  clearConfig() {
-    localStorage.removeItem('taskdash_sb_url');
-    localStorage.removeItem('taskdash_sb_key');
-    window.location.reload();
   },
 
   // 1. Get the currently active assigned task
@@ -71,7 +55,7 @@ const DataService = {
         if (error) throw error;
         if (data) return data;
       } catch (err) {
-        console.warn('Supabase getActiveTask error, falling back to local:', err.message);
+        console.warn('Supabase getActiveTask error, checking local store:', err.message);
       }
     }
     return MockDB.getActiveTask();
@@ -86,7 +70,7 @@ const DataService = {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) return data;
       } catch (err) {
         console.warn('Supabase getAllTasks error:', err.message);
       }
@@ -98,9 +82,11 @@ const DataService = {
   async createTask(taskData) {
     if (this.isLive()) {
       try {
-        // If this new task is active, deactivate others
         if (taskData.is_active) {
-          await supabaseClient.from('tasks').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+          await supabaseClient
+            .from('tasks')
+            .update({ is_active: false })
+            .neq('id', '00000000-0000-0000-0000-000000000000');
         }
 
         const { data, error } = await supabaseClient
@@ -169,7 +155,7 @@ const DataService = {
           .maybeSingle();
 
         if (error) throw error;
-        return data;
+        if (data) return data;
       } catch (err) {
         console.warn('Supabase student lookup error:', err.message);
       }
@@ -187,7 +173,7 @@ const DataService = {
           .select('*')
           .order('reg_no', { ascending: true });
 
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) return data;
       } catch (err) {
         console.warn('Supabase getAllStudents error:', err.message);
       }
@@ -248,8 +234,8 @@ const DataService = {
 
     if (this.isLive() && file instanceof File) {
       try {
-        // Upload to Supabase Storage
-        const fileExt = file.name.split('.').pop();
+        // Upload to Supabase Storage Bucket
+        const fileExt = file.name.split('.').pop() || 'png';
         const filePath = `${taskId}/${cleanRegNo}_${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabaseClient
@@ -257,15 +243,23 @@ const DataService = {
           .from(SUPABASE_CONFIG.storageBucket)
           .upload(filePath, file, { upsert: true });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.warn('Bucket upload error, converting to base64 fallback:', uploadError.message);
+          // If storage bucket isn't created yet or permission error, convert to data URL
+          screenshotUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.readAsDataURL(file);
+          });
+        } else {
+          // Get Public URL
+          const { data: { publicUrl } } = supabaseClient
+            .storage
+            .from(SUPABASE_CONFIG.storageBucket)
+            .getPublicUrl(filePath);
 
-        // Get Public URL
-        const { data: { publicUrl } } = supabaseClient
-          .storage
-          .from(SUPABASE_CONFIG.storageBucket)
-          .getPublicUrl(filePath);
-
-        screenshotUrl = publicUrl;
+          screenshotUrl = publicUrl;
+        }
 
         // Upsert submission record
         const { data, error: dbError } = await supabaseClient
@@ -287,7 +281,7 @@ const DataService = {
         throw err;
       }
     } else {
-      // Local/Demo Mode: Convert File to base64 Data URL or use existing URL
+      // Local/Base64 handling
       if (file instanceof File) {
         screenshotUrl = await new Promise((resolve) => {
           const reader = new FileReader();

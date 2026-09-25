@@ -42,23 +42,9 @@ const tabCountPending = document.getElementById('tabCountPending');
 
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
-  setupAdminBannerStatus();
   await loadDashboard();
   attachAdminEvents();
 });
-
-// Setup Connection Status Banner
-function setupAdminBannerStatus() {
-  const banner = document.getElementById('adminConnectionBanner');
-  const bannerText = document.getElementById('adminConnectionText');
-  if (DataService.isLive()) {
-    banner.classList.add('active-live');
-    bannerText.innerHTML = `<span>🟢 Connected to <strong>Supabase Cloud</strong> (Live DB & Storage)</span>`;
-  } else {
-    banner.classList.remove('active-live');
-    bannerText.innerHTML = `<span>⚡ Mode: <strong>Demo / Local Storage</strong>. Test right away or connect your Supabase project.</span>`;
-  }
-}
 
 // 1. Load All Dashboard Data
 async function loadDashboard() {
@@ -242,7 +228,6 @@ function renderSectionCards(sectionStats) {
     // Click section card to quickly filter
     box.addEventListener('click', () => {
       if (currentSectionFilter === item.section && currentDeptFilter === item.department) {
-        // Toggle off
         currentSectionFilter = 'all';
         currentDeptFilter = 'all';
       } else {
@@ -474,12 +459,10 @@ async function downloadProofsZip() {
 
     try {
       if (sub.screenshot_url.startsWith('data:image')) {
-        // Base64 Data URL
         const base64Data = sub.screenshot_url.split(',')[1];
         zip.file(filename, base64Data, { base64: true });
         count++;
       } else {
-        // Remote Image URL
         const response = await fetch(sub.screenshot_url);
         const blob = await response.blob();
         zip.file(filename, blob);
@@ -654,7 +637,6 @@ async function handleManualStudentAdd(e) {
 
 // 12. Attach All Event Listeners
 function attachAdminEvents() {
-  // Task selector change
   taskSelector.addEventListener('change', async (e) => {
     selectedTaskId = e.target.value;
     currentTask = allTasks.find(t => t.id === selectedTaskId);
@@ -664,29 +646,25 @@ function attachAdminEvents() {
     renderFilteredTable();
   });
 
-  // Search filter
   searchInput.addEventListener('input', (e) => {
     currentSearchQuery = e.target.value.trim();
     renderFilteredTable();
   });
 
-  // Section dropdown filter
   filterSectionSelect.addEventListener('change', (e) => {
     currentSectionFilter = e.target.value;
     computeAnalytics();
     renderFilteredTable();
   });
 
-  // Department dropdown filter
   filterDeptSelect.addEventListener('change', (e) => {
     currentDeptFilter = e.target.value;
     computeAnalytics();
     renderFilteredTable();
   });
 
-  // Filter Status Tabs
   document.querySelectorAll('.filter-tab-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentStatusFilter = btn.getAttribute('data-status');
@@ -694,18 +672,14 @@ function attachAdminEvents() {
     });
   });
 
-  // Action Buttons
   document.getElementById('btnCopyWhatsAppPending').addEventListener('click', openPendingCopyDialog);
   document.getElementById('btnExportCSV').addEventListener('click', exportCSVReport);
   document.getElementById('btnDownloadZip').addEventListener('click', downloadProofsZip);
   document.getElementById('btnNewTask').addEventListener('click', openNewTaskModal);
   document.getElementById('btnManageStudents').addEventListener('click', openRosterModal);
-  document.getElementById('btnOpenConfigAdmin').addEventListener('click', openConfigModal);
 
-  // New Task Form
   document.getElementById('newTaskForm').addEventListener('submit', handleCreateNewTask);
 
-  // CSV Dropzone
   const csvDrop = document.getElementById('csvDropzone');
   const csvInput = document.getElementById('csvFileInput');
   csvDrop.addEventListener('click', () => csvInput.click());
