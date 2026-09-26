@@ -34,8 +34,8 @@
   <!-- Main Content Wrapper -->
   <main class="main-wrapper">
 
-    <!-- Active Task Banner -->
-    <section id="taskHeroSection" class="task-hero-card">
+    <!-- Active Task Banner (Clickable to reveal submission form) -->
+    <section id="taskHeroSection" class="task-hero-card clickable-task" role="button" tabindex="0" aria-expanded="false" title="Click to open submission form">
       <div class="task-meta-top">
         <span class="badge badge-live" id="taskStatusBadge">● Active Task</span>
         <span class="badge badge-pill" id="taskDeadlineBadge">⏳ Loading deadline...</span>
@@ -58,15 +58,28 @@
           <span>Single submission per Register Number</span>
         </div>
       </div>
+      
+      <!-- Interactive Click CTA Prompt -->
+      <div class="task-click-prompt">
+        <span style="font-size: 0.875rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.4rem;">
+          <span>💡</span> Click this task card to open the submission form
+        </span>
+        <button type="button" id="btnToggleForm" class="task-click-btn">
+          <span>Open Submission Form</span> &darr;
+        </button>
+      </div>
     </section>
 
-    <!-- Submission Form Card -->
-    <section class="card form-container">
+    <!-- Submission Form Card (Collapsed by default, opens on task click) -->
+    <section id="submissionFormSection" class="card form-container form-collapsed">
       <div class="card-header">
         <div>
           <h2 style="font-size: 1.25rem;">Submit Proof Screenshot</h2>
           <p style="font-size: 0.85rem; margin-top: 0.15rem;">Enter your Register Number to auto-fetch your details, then attach your screenshot.</p>
         </div>
+        <button type="button" id="btnCloseForm" class="btn btn-outline btn-sm" title="Close submission form">
+          ✕ Close Form
+        </button>
       </div>
 
       <div class="card-body">
@@ -249,8 +262,8 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="js/mock-data.js?v=5.0"></script>
-  <script src="js/supabase-config.js?v=5.0"></script>
-  <script src="js/student-app.js?v=5.0"></script>
+  <script src="js/mock-data.js?v=6.0"></script>
+  <script src="js/supabase-config.js?v=6.0"></script>
+  <script src="js/student-app.js?v=6.0"></script>
 </body>
 </html>

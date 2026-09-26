@@ -6,8 +6,14 @@ let currentTask = null;
 let verifiedStudent = null;
 let selectedFile = null;
 let debounceTimer = null;
+let isFormOpen = false;
 
 // DOM Elements
+const taskHeroSection = document.getElementById('taskHeroSection');
+const submissionFormSection = document.getElementById('submissionFormSection');
+const btnToggleForm = document.getElementById('btnToggleForm');
+const btnCloseForm = document.getElementById('btnCloseForm');
+
 const taskTitleEl = document.getElementById('taskTitle');
 const taskDescEl = document.getElementById('taskDescription');
 const taskDeadlineEl = document.getElementById('taskDeadlineBadge');
@@ -83,6 +89,39 @@ async function loadActiveTask() {
 
 // 2. Attach Event Listeners
 function attachEventListeners() {
+  // Click on active task banner to toggle/open submission form
+  if (taskHeroSection) {
+    taskHeroSection.addEventListener('click', (e) => {
+      // Don't toggle if user highlighted/selected text
+      const selection = window.getSelection().toString();
+      if (selection && selection.length > 0) return;
+      toggleSubmissionForm();
+    });
+
+    taskHeroSection.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleSubmissionForm();
+      }
+    });
+  }
+
+  // Click on explicit "Open Submission Form" button inside task banner
+  if (btnToggleForm) {
+    btnToggleForm.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSubmissionForm();
+    });
+  }
+
+  // Close form button inside form card
+  if (btnCloseForm) {
+    btnCloseForm.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeSubmissionForm();
+    });
+  }
+
   // Register number live input lookup
   regNoInput.addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
@@ -129,6 +168,59 @@ function attachEventListeners() {
 
   // Form Submission
   submissionForm.addEventListener('submit', handleFormSubmit);
+}
+
+// 2b. Form Toggle / Collapsible Controls
+function openSubmissionForm() {
+  if (isFormOpen) return;
+  isFormOpen = true;
+  if (submissionFormSection) {
+    submissionFormSection.classList.remove('form-collapsed');
+    submissionFormSection.classList.add('form-expanded');
+  }
+  if (taskHeroSection) {
+    taskHeroSection.classList.add('task-expanded');
+    taskHeroSection.setAttribute('aria-expanded', 'true');
+  }
+  if (btnToggleForm) {
+    btnToggleForm.innerHTML = '<span>Submission Form Active</span> &uarr;';
+  }
+  // Smoothly scroll down so user immediately sees the open form
+  setTimeout(() => {
+    if (submissionFormSection) {
+      submissionFormSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (regNoInput) {
+      regNoInput.focus();
+    }
+  }, 100);
+}
+
+function closeSubmissionForm() {
+  if (!isFormOpen) return;
+  isFormOpen = false;
+  if (submissionFormSection) {
+    submissionFormSection.classList.remove('form-expanded');
+    submissionFormSection.classList.add('form-collapsed');
+  }
+  if (taskHeroSection) {
+    taskHeroSection.classList.remove('task-expanded');
+    taskHeroSection.setAttribute('aria-expanded', 'false');
+  }
+  if (btnToggleForm) {
+    btnToggleForm.innerHTML = '<span>Open Submission Form</span> &darr;';
+  }
+  if (taskHeroSection) {
+    taskHeroSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+function toggleSubmissionForm() {
+  if (isFormOpen) {
+    closeSubmissionForm();
+  } else {
+    openSubmissionForm();
+  }
 }
 
 // 3. Verify Student via Register Number
@@ -256,6 +348,9 @@ async function handleFormSubmit(e) {
     removeSelectedFile();
     await loadActiveTask();
 
+    // Close submission form cleanly
+    closeSubmissionForm();
+
   } catch (err) {
     console.error('Submission failed:', err);
     alert('Submission failed: ' + (err.message || 'Please check your connection and try again.'));
@@ -278,3 +373,9 @@ function formatBytes(bytes, decimals = 1) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
+
+// Expose globals for inline onclick handlers and debugging
+window.closeSuccessModal = closeSuccessModal;
+window.openSubmissionForm = openSubmissionForm;
+window.closeSubmissionForm = closeSubmissionForm;
+window.toggleSubmissionForm = toggleSubmissionForm;
